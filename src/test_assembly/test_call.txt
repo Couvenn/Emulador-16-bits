@@ -1,0 +1,40 @@
+DATA:
+
+CODE:
+
+JMP C0
+
+//////////////////////////////////////////////////////////////////////////
+mal:            // Resultados                                           //
+ MOV A,255                                                               //
+ MOV B,255                                                              //
+ JMP null                                                               //
+                                                                        //
+bien:                                                                   //
+ MOV A,170                                                              //
+ MOV B,17                                                               //
+ JMP null                                                               //
+                                                                        //
+null:                                                                   //
+ JMP null                                                               //
+//////////////////////////////////////////////////////////////////////////
+
+C0:
+ MOV B,65535
+ MOV A,1
+ MOV (B),A      // mem[FFFF] = 1
+ CALL func1
+
+func1:
+ MOV A,(B)      // A = nro-de-func1
+ CMP A,func1    // A debe ser el numero de linea de func1 
+ JNE mal                                                    //DEBUG: NO SALTA ACA
+ MOV B,65534
+ MOV (B),A      // mem[FFFE] = nro-de-func1 (0E)
+ CALL func2
+
+func2:
+ MOV A,(B)      // A = nro-de-func2
+ CMP A,func2    // A debe ser el numero de linea de func2
+ JNE mal
+ JMP bien 

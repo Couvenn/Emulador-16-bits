@@ -1,0 +1,64 @@
+DATA:
+
+a1       4d              // 0
+b1    1001b              // 1
+
+     c1    AAh           // 2
+
+array   10              // 3
+        15d             //4
+        1h              //5
+        101b            //6
+
+CODE:
+
+MOV A   ,(a1)              // A=4
+MOV    B, (  b1)             // B=9
+
+ADD A,B                 // A=13
+
+MOV B,    (c1 )             // B=170 o AAh
+
+ADD B,A                 // B=183 o B7h 
+
+MOV (a1),B               // a=183
+
+
+MOV B,array             // B=3
+MOV A,  (   B)          // A=10
+
+INC      B            // B=4
+ADD A,(  B   )          // A=25
+
+INC B                  // B=5
+
+ADD A,(B)               // A=26
+
+INC B                 // B=6
+
+SUB A,(B)               // A=21
+
+CMP A,21
+JEQ bien
+
+JMP mal 
+
+
+
+bien:
+    MOV A,11h
+    MOV B,AAh 
+    JMP end
+
+mal:
+    MOV A,255
+    MOV B,255
+    JMP end 
+
+end:
+    JMP end
+
+
+
+
+

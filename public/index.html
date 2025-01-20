@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assembler 16-bits</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat&display=swap" rel="stylesheet">
+</head>
+<body>
+    <section class="mostrar_datos">
+        <div class="registros">
+            Registros
+            <ul id="lista_registros">
+                <li>A : <span id="reg_A">0</span></li>
+                <li>B : <span id="reg_B">0</span></li>
+                <li>PC : <span id="PC">0</span></li>
+                <li>SP : <span id="SP">0xFFFF</span></li>
+            </ul>
+        </div>
+        <div class="memoria">
+            Memoria
+            <ul id="lista_memoria">
+            </ul>
+        </div>
+    </section> 
+    <hr>
+    <section class="compilar_datos">
+        <div id="botones_codigo">
+            <button class= "botones" id="ejecutar" disabled>Ejecutar</button>
+        </div>
+        <div id="texto_codigo">
+            <textarea placeholder="Escribe tu codigo aqui" id="codigo"></textarea>
+        </div>
+    </section>
+    
+    <script src="cliente.js"></script>
+    
+</body>
+</html>
