@@ -2,6 +2,9 @@ const reg_a = document.getElementById("reg_A")
 const reg_b = document.getElementById("reg_B")
 const pc = document.getElementById("PC")
 const sp = document.getElementById("SP")
+const flag_c = document.getElementById("C")
+const flag_z = document.getElementById("Z")
+const flag_n = document.getElementById("N")
 const memoria = document.getElementById("lista_memoria")
 
 const b_ejecutar = document.getElementById("ejecutar")
@@ -10,7 +13,8 @@ const b_next = document.getElementById("next")
 
 const texto_codigo = document.getElementById("codigo")
 
-const URL_API = "https://emulador-16-bits.onrender.com"
+//const URL_API = "https://emulador-16-bits.onrender.com"
+const URL_API = "http://localhost:3000"
 
 let ciclos = 0
 
@@ -20,15 +24,27 @@ function formatear_datos () {
     reg_b.innerText = 0
     pc.innerText = 0 
     sp.innerText = "0xFFF"
+    flag_c.innerText = 0
+    flag_n.innerText = 0
+    flag_z.innerText = 0
+
     let datos_antiguos = memoria.querySelectorAll("li")
     datos_antiguos.forEach(dato => dato.remove())
-        
 }
 
-function actualizar_datos (datos) {
-    if (ciclos >= 0) {
+function actualizar_datos (datos, boton) {
+    if (boton == "ejecutar") {
+        b_ejecutar.disabled = true
+        b_next.disabled = true
+        b_prev.disabled = true
+        
+    } else if (ciclos == 0) {
+        b_ejecutar.disabled = false
         b_next.disabled = false
         b_prev.disabled = true
+    } else if (ciclos > 0) {
+        b_ejecutar.disabled = false
+        b_prev.disabled = false
     }
 
     if (datos.error === undefined) {
@@ -36,6 +52,9 @@ function actualizar_datos (datos) {
         reg_b.innerText = datos.registros["B"]
         pc.innerText = datos.registros["PC"] 
         sp.innerText = "0x" + datos.registros["SP"].toString(16).toUpperCase()
+        flag_c.innerText = datos.flags["C"]
+        flag_n.innerText = datos.flags["N"]
+        flag_z.innerText = datos.flags["Z"]
     
         let datos_antiguos = memoria.querySelectorAll("li")
         datos_antiguos.forEach(dato => dato.remove())
@@ -63,15 +82,12 @@ b_ejecutar.addEventListener("click", () => {
         body: JSON.stringify({codigo: texto_codigo.value})
     })
     .then(response => response.json())
-    .then(data => actualizar_datos(data))
-    b_ejecutar.disabled = true
-    b_prev.disabled = true
-    b_next.disabled = true
+    .then(data => actualizar_datos(data, "ejecutar"))
 })
 
 b_prev.addEventListener("click", () => {
     if (ciclos > 0) {
-        ciclos --
+        ciclos--
     }
     fetch(URL_API + "/prev", {
         method: "POST",
@@ -83,8 +99,7 @@ b_prev.addEventListener("click", () => {
 })
 
 b_next.addEventListener("click", () => {
-    ciclos ++
-
+    ciclos++
     fetch(URL_API + "/next", {
         method: "POST",
         headers: {'Content-Type': 'application/json'},
@@ -92,9 +107,6 @@ b_next.addEventListener("click", () => {
     })
     .then(response => response.json())
     .then(data => actualizar_datos(data))
-    if (ciclos != 0) {
-        b_prev.disabled = false
-    }
 })
 
 texto_codigo.addEventListener('input', () => {
