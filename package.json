@@ -11,7 +11,7 @@
   "main": "servidor.js",
   "scripts": {
     "dev": "nodemon ./src/servidor.js",
-    "start": "NODE_ENV=production node ./src/servidor.js"
+    "start": "node ./src/servidor.js"
   },
   "keywords": [],
   "author": "",
