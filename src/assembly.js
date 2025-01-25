@@ -141,7 +141,6 @@ class Assembly {
             
             let operacion = text_linea[0]
             
-            console.log(text_linea) 
             if (text_linea.length === 3) { 
                 let valor_1 = this.traducir_valor(text_linea[1])
                 let valor_2 = this.traducir_valor(text_linea[2])

@@ -26,8 +26,7 @@ function formatear_datos () {
 }
 
 function actualizar_datos (datos) {
-    if (ciclos == 0) {
-        b_ejecutar.disabled = false
+    if (ciclos >= 0) {
         b_next.disabled = false
         b_prev.disabled = true
     }
