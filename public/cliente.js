@@ -10,7 +10,7 @@ const b_next = document.getElementById("next")
 
 const texto_codigo = document.getElementById("codigo")
 
-const URL_API = "https://emulador-16-bits.onrender.com/"
+const URL_API = "https://emulador-16-bits.onrender.com"
 
 let ciclos = 0
 
