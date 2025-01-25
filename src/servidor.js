@@ -19,7 +19,6 @@ app.post('/assembly', (req,res) => {
   try {
     assembly_inst.cargar_datos_y_direcciones(req.body.codigo)
     assembly_inst.ejecutar()
-    console.log(req.body)
     res.json(assembly_inst)
 
   } catch (error) {
@@ -28,12 +27,28 @@ app.post('/assembly', (req,res) => {
 });
 
 app.post('/next', (req,res) => {
-  console.log(req.body)
-  res.json({ nada: "Por ahora"});
+  const assembly_inst = new Assembly
+  try {
+    assembly_inst.cargar_datos_y_direcciones(req.body.codigo)
+    assembly_inst.ejecutar(req.body.ciclos)
+    res.json(assembly_inst)
+
+  } catch (error) {
+    res.json({error: error.message})
+  };
 });
 
-app.post('/preview', (req,res) => {
-  console.log(req.body)
+app.post('/prev', (req,res) => {
+  const assembly_inst = new Assembly
+  try {
+    assembly_inst.cargar_datos_y_direcciones(req.body.codigo)
+    assembly_inst.ejecutar(req.body.ciclos)
+    res.json(assembly_inst)
+
+  } catch (error) {
+    res.json({error: error.message})
+  };
+
 });
 
 app.use((req, res) => {

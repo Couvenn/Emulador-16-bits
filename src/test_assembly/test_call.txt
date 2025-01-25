@@ -20,17 +20,17 @@ null:                                                                   //
 //////////////////////////////////////////////////////////////////////////
 
 C0:
- MOV B,65535
+ MOV B,4095
  MOV A,1
- MOV (B),A      // mem[FFFF] = 1
+ MOV (B),A      // mem[FFF] = 1
  CALL func1
 
 func1:
  MOV A,(B)      // A = nro-de-func1
  CMP A,func1    // A debe ser el numero de linea de func1 
  JNE mal                                                    //DEBUG: NO SALTA ACA
- MOV B,65534
- MOV (B),A      // mem[FFFE] = nro-de-func1 (0E)
+ MOV B,4094
+ MOV (B),A      // mem[FFE] = nro-de-func1 (0E)
  CALL func2
 
 func2:

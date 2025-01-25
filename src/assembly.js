@@ -1,12 +1,37 @@
-const {BITS, BITS_MAX, LIMITE_CICLOS, REGEX_DIR_CODIGO, REGEX_NUMEROS, REGEX_DIR_B, REGEX_B, REGEX_DIR, LISTA_SALTOS} = require('./parametros');
+const {BITS, BITS_MAX, BITS_MAX_DIR, LIMITE_CICLOS, REGEX_DIR_CODIGO, REGEX_NUMEROS, REGEX_DIR_B, REGEX_B, REGEX_DIR, LISTA_SALTOS} = require('./parametros');
+
+class Registro {
+    constructor(bits_max, valor_inicial=0) {
+        this._valor = valor_inicial
+        this._valor_maximo = bits_max
+    }
+    get valor () {
+        return this._valor
+    }
+    set valor (valor) {
+        if (valor > this._valor_maximo) {
+            valor = valor % this._valor_maximo - 1
+        } else if (valor < 0) {
+            while (valor < 0) {
+                valor += this._valor_maximo;
+            }
+            valor ++
+        }
+        this._valor = valor
+    }
+    toJSON() {
+        return this.valor
+    }
+}
 
 class Assembly {
     constructor() {
         this.registros = {
-            A: 0,
-            B: 0,
-            PC: 0,
-            SP: BITS_MAX
+            A: new Registro(BITS_MAX),
+            B: new Registro(BITS_MAX),
+            PC: new Registro(BITS_MAX_DIR),
+            SP: new Registro(BITS_MAX_DIR, BITS_MAX_DIR),
+            AUX: new Registro(BITS_MAX)
         }
         this.memoria = {}
         this.direcciones_memoria = {}
@@ -50,7 +75,6 @@ class Assembly {
             .split(/\n+/)
             .map(this.quitar_comentario) //Limpia los comentarios
             .filter(linea => linea.trim() !== "") //Si es una linea vacia la elimina
-        console.log(lista_codigo)
 
         let code_check = false
         let data_check = false
@@ -64,6 +88,9 @@ class Assembly {
             } else if (data_check && linea != "CODE:") {
                 let indice = 0
                 linea = linea.split(/ +/)
+
+                //Recorta el mp a los bits de direccion
+                mp &= BITS_MAX_DIR
 
                 if (linea.length > 2) { //ERROR mas de 2 valores en al declarar una variable
                     throw new Error("DATA: Mas de un valor para una variable")
@@ -81,9 +108,10 @@ class Assembly {
                     throw new Error("DATA: Valor de variable invalida")
                 }
                 
-                //Regula el valor a un no negativo y al limitado por los BITS
-                valor = this.comprobar_flag_c("NOP", valor)
-                this.memoria[mp] = valor
+                
+                //Regula el valor a los bits generales
+                this.registros["AUX"].valor = valor
+                this.memoria[mp] = this.registros["AUX"].valor
                 
                 mp++
             
@@ -93,6 +121,7 @@ class Assembly {
             } else if (code_check){
                 linea = lista_codigo[i_linea].match(REGEX_DIR_CODIGO)
                 if (linea != null) {
+                    i_code &= BITS_MAX_DIR
                     this.direcciones_codigo[linea[1]] = i_code
                 } else {
                     this.instrucciones.push(lista_codigo[i_linea])
@@ -101,22 +130,25 @@ class Assembly {
             }
         }
     }
-    ejecutar() {
+    ejecutar(ciclo_exigido) {
         let ciclos = 0
-        while ((this.registros["PC"] < this.instrucciones.length) & (ciclos < LIMITE_CICLOS)) {
-            let text_linea = this.quitar_comentario(this.instrucciones[this.registros["PC"]])
+
+        while ((this.registros["PC"].valor < this.instrucciones.length) && (ciclos < LIMITE_CICLOS) && (ciclos < ciclo_exigido || ciclo_exigido == undefined)) {
+            let text_linea = this.instrucciones[this.registros["PC"].valor]
             
-            //Separo por palabra el string
+            //Separo por palabra dentro de la linea de texto
             text_linea = text_linea.match(/(\w+|\(\s*\w+\s*\))/g)
             
             let operacion = text_linea[0]
+            
+            console.log(text_linea) 
             if (text_linea.length === 3) { 
                 let valor_1 = this.traducir_valor(text_linea[1])
                 let valor_2 = this.traducir_valor(text_linea[2])
                 if (operacion in this.operaciones) {
                     this.operaciones[operacion](valor_1, valor_2)
                 } else {
-                    throw new Error("Operacion Invalida")
+                    throw new Error("CODE: Operacion Invalida en instruccion " + this.registros["PC"].valor)
                 }
             
             } else if (text_linea.length === 2) {
@@ -130,53 +162,58 @@ class Assembly {
                 if (operacion in this.operaciones) {
                     this.operaciones[operacion](valor_1)
                 } else {
-                    throw new Error("CODE: Operacion Invalida en instruccion " + this.registros["PC"])
+                    throw new Error("CODE: Operacion Invalida en instruccion " + this.registros["PC"].valor)
                 }
             } else if (["RET", "NOP"].includes(operacion)) {
                 this.operaciones[operacion]()
             } else {
-                throw new Error("CODE: Error en instruccion " + this.registros["PC"])
+                throw new Error("CODE: Error en instruccion " + this.registros["PC"].valor)
             }
-            this.registros["PC"] ++
+            //En caso de ser un salto el salto se encarca de aumentar el PC si es qeu salta o no
+            if (!LISTA_SALTOS.includes(operacion)) {
+                this.registros["PC"].valor ++
+            }
             ciclos ++
         }
     }
 
     //Operaciones ------------------------------------------------------
-    mov(destino, valor) {
+    mov(destino, dato) {
         this.restaurar_flags()
-        if (["A", "B"].includes(destino) && ["A", "B"].includes(valor)) { //A, B 
-            this.registros[destino] = this.registros[valor]
-        } else if (["A", "B", "(B)"].includes(destino) && typeof(valor) === "number") { //A, Lit | (B), Lit
+        if (["A", "B"].includes(destino) && ["A", "B"].includes(dato)) { //A, B 
+            this.registros[destino].valor = this.registros[dato].valor
+        } else if (["A", "B", "(B)"].includes(destino) && typeof(dato) === "number") { //A, Lit | (B), Lit
             if (destino == "(B)") {
-                this.memoria[this.registros["B"]] = valor
+                //Ya que es una direccion nos aseguramos que este en 12 bits
+                this.registros["AUX"].valor = this.registros["B"].valor & BITS_MAX_DIR
+
+                this.memoria[this.registros["AUX"].valor] = dato
             } else {
-                this.registros[destino] = valor 
+                this.registros[destino].valor = dato 
             }
-        } else if (["A", "B"].includes(destino) && REGEX_DIR_B.test(valor)) { //A, (dir) | A, (B)
-            let direccion = this.quitar_parentesis(valor)
+        } else if (["A", "B"].includes(destino) && REGEX_DIR_B.test(dato)) { //A, (dir) | A, (B)
+            let direccion = this.quitar_parentesis(dato)
             
+            //Ya que es una direccion nos aseguramos que este en 12 bits
             if (direccion == "B") {
-                if (this.registros["B"] in this.memoria) {
-                    this.registros[destino] = this.memoria[this.registros["B"]]
-                } else {
-                    this.registros[destino] = 0
-                }
+                direccion = this.registros["B"].valor & BITS_MAX_DIR
+                this.registros[destino].valor = this.memoria[direccion] ?? 0
+            
             } else {
-                let direccion_decimal = this.transformar_a_decimal(direccion)
-                if (direccion in this.memoria) {
-                    this.registros[destino] =  this.memoria[direccion_decimal]
-                } else {
-                    this.registros[destino] =  0
-                }
+                this.registros["AUX"].valor = this.transformar_a_decimal(direccion)
+                direccion = this.registros["AUX"].valor & BITS_MAX_DIR
+                this.registros[destino].valor =  this.memoria[direccion] ?? 0
             }
-        } else if (REGEX_DIR_B.test(destino) && ["A", "B"].includes(valor)) { //(dir), A | (B), A
+        } else if (REGEX_DIR_B.test(destino) && ["A", "B"].includes(dato)) { //(dir), A | (B), A
             let direccion = this.quitar_parentesis(destino)
-            if (direccion == "B" && valor == "A") {
-                this.memoria[this.registros["B"]] = this.registros[valor]
+            
+            if (direccion == "B" && dato == "A") {
+                direccion = this.registros["B"].valor & BITS_MAX_DIR
+                this.memoria[direccion] = this.registros[dato].valor
             } else {
-                let destino_decimal = this.transformar_a_decimal(direccion)
-                this.memoria[destino_decimal] = this.registros[valor]
+                this.registros["AUX"].valor = this.transformar_a_decimal(direccion)
+                direccion = this.registros["AUX"].valor & BITS_MAX_DIR
+                this.memoria[direccion] = this.registros[dato].valor
             }
         } else {
             throw new Error("Operacion con argumentos invalidos")
@@ -187,53 +224,71 @@ class Assembly {
         if (valor !== null) {
             let valor_literal = this.forzar_literal(valor)
             if (["A", "B"].includes(destino)) { // A, B
+                //Asignar valor
+                let resultado = this.registros["A"].valor + valor_literal
+                this.registros[destino].valor = resultado
+
                 //flags
-                let resultado = this.comprobar_flag_c("ADD", this.registros["A"] + valor_literal)
+                this.comprobar_flag_c("ADD", this.registros[destino].valor, resultado)
                 this.comprobar_flag_z(resultado)
-                //asignacion
-                this.registros[destino] = resultado
             } else {
                 throw new Error("Operacion con argumentos invalidos")
             }
         } else {
             if (REGEX_DIR.test(destino) ) { // (dir)
                 let direccion = this.quitar_parentesis(destino)
-                let direccion_decimal = this.transformar_a_decimal(direccion)
+
+                //Recortamos al ser una direccion
+                this.registros["AUX"].valor = this.transformar_a_decimal(direccion)
+                let direccion_decimal = this.registros["AUX"].valor & BITS_MAX_DIR
+
+                //Asignar valores
+                let resultado = this.registros["A"].valor + this.registros["B"].valor
+                this.registros["AUX"].valor = resultado 
+
+                this.memoria[direccion_decimal] = this.registros["AUX"].valor
+
                 //flags
-                let resultado = this.comprobar_flag_c("ADD", this.registros["A"] + this.registros["B"])
+                this.comprobar_flag_c("ADD", this.registros["AUX"].valor, resultado)
                 this.comprobar_flag_z(resultado)
-                //asignacion
-                this.memoria[direccion_decimal] = resultado
             } else {
                 throw new Error("Operacion con argumentos invalidos")
             }
-        }
-        
+        } 
     }
     sub(destino, valor = null) {
         this.restaurar_flags()
         if (valor !== null) {
             let valor_literal = this.forzar_literal(valor)
             if (["A", "B"].includes(destino)) { // A, B
+                
+                this.comprobar_flag_c("SUB", this.registros["A"].valor, valor_literal)
+                //Asignamos valores
+                let resultado = this.registros["A"].valor - valor_literal
+                this.registros[destino].valor = resultado
+
                 //flags
-                this.comprobar_flag_c("SUB", this.registros["A"], valor_literal)
-                let resultado = this.comprobar_flag_n(this.registros["A"] - valor_literal)
+                this.comprobar_flag_n(resultado)
                 this.comprobar_flag_z(resultado)
-                //asignacion
-                this.registros[destino] = resultado
             } else {
                 throw new Error("Operacion con argumentos invalidos")
             }
         } else {
             if (REGEX_DIR.test(destino)) { // (dir)
+                //direccion
                 let direccion = this.quitar_parentesis(destino)
-                let direccion_decimal = this.transformar_a_decimal(direccion)
+                this.registros["AUX"].valor = this.transformar_a_decimal(direccion) 
+                let direccion_decimal = this.registros["AUX"].valor & BITS_MAX_DIR
+
+                //Asignar valores
+                let resultado = this.registros["A"].valor - this.registros["B"].valor
+                this.registros["AUX"].valor = resultado
+                this.memoria[direccion_decimal] = this.registros["AUX"].valor
+
                 //flags
-                this.comprobar_flag_c("SUB", this.registros["A"], this.registros["B"])
-                let resultado = this.comprobar_flag_n(this.registros["A"] - this.registros["B"])
+                this.comprobar_flag_c("SUB", this.registros["A"].valor, this.registros["B"].valor)
+                this.comprobar_flag_n(resultado)
                 this.comprobar_flag_z(resultado)
-                //asignacion
-                this.memoria[direccion_decimal] = this.registros["A"] - this.registros["B"]
             } else {
                 throw new Error("Operacion con argumentos invalidos")
             }
@@ -244,21 +299,23 @@ class Assembly {
         if (valor !== null) {
             let valor_literal = this.forzar_literal(valor)
             if (["A", "B"].includes(destino)) { // A, B
-                //flags
-                this.comprobar_flag_z(this.registros["A"] & valor_literal)
                 //Asignacion
-                this.registros[destino] = this.registros["A"] & valor_literal
+                this.registros[destino].valor = this.registros["A"].valor & valor_literal
+                //flags
+                this.comprobar_flag_z(this.registros[destino].valor)
             } else {
                 throw new Error("Operacion con argumentos invalidos")
             }
         } else {
             if (REGEX_DIR.test(destino)) { // (dir)
+                //direccion
                 let direccion = this.quitar_parentesis(destino)
-                let direccion_decimal = this.transformar_a_decimal(direccion)
-                //flags
-                this.comprobar_flag_z(this.registros["A"] & this.registros["B"])
+                this.registros["AUX"].valor = this.transformar_a_decimal(direccion) 
+                let direccion_decimal = this.registros["AUX"].valor & BITS_MAX_DIR
                 //Asignacion
-                this.memoria[direccion_decimal] = this.registros["A"] & this.registros["B"]
+                this.memoria[direccion_decimal] = this.registros["A"].valor & this.registros["B"].valor
+                //flags
+                this.comprobar_flag_z(this.memoria[direccion_decimal])
             } else {
                 throw new Error("Operacion con argumentos invalidos")
             }
@@ -269,21 +326,23 @@ class Assembly {
         if (valor !== null) {
             let valor_literal = this.forzar_literal(valor)
             if (["A", "B"].includes(destino)) { // A, B
-                //flags
-                this.comprobar_flag_z(this.registros["A"] | valor_literal)
                 //Asignacion
-                this.registros[destino] = this.registros["A"] | valor_literal
+                this.registros[destino].valor = this.registros["A"].valor | valor_literal
+                //flags
+                this.comprobar_flag_z(this.registros[destino].valor)
             } else {
                 throw new Error("Operacion con argumentos invalidos")
             }
         } else {
             if (REGEX_DIR.test(destino)) { // (dir)
+                //direccion
                 let direccion = this.quitar_parentesis(destino)
-                let direccion_decimal = this.transformar_a_decimal(direccion)
-                //flags
-                this.comprobar_flag_z(this.registros["A"] | this.registros["B"])
+                this.registros["AUX"].valor = this.transformar_a_decimal(direccion) 
+                let direccion_decimal = this.registros["AUX"].valor & BITS_MAX_DIR
                 //Asignacion
-                this.memoria[direccion_decimal] = this.registros["A"] | this.registros["B"]
+                this.memoria[direccion_decimal] = this.registros["A"].valor | this.registros["B"].valor
+                //flags
+                this.comprobar_flag_z(this.memoria[direccion_decimal])
             } else {
                 throw new Error("Operacion con argumentos invalidos")
             }
@@ -294,21 +353,24 @@ class Assembly {
         if (valor !== null) {
             let valor_literal = this.forzar_literal(valor)
             if (["A", "B"].includes(destino)) { // A, B
-                //flags
-                this.comprobar_flag_z(this.registros["A"] ^ valor_literal)
                 //Asignacion
-                this.registros[destino] = this.registros["A"] ^ valor_literal
+                this.registros[destino].valor = this.registros["A"].valor ^ valor_literal
+                //flags
+                this.comprobar_flag_z(this.registros[destino].valor)
+
             } else {
                 throw new Error("Operacion con argumentos invalidos")
             }
         } else {
             if (REGEX_DIR.test(destino)) { // (dir)
+                //direccion
                 let direccion = this.quitar_parentesis(destino)
-                let direccion_decimal = this.transformar_a_decimal(direccion)
-                //flags
-                this.comprobar_flag_z(this.registros["A"] ^ this.registros["B"])
+                this.registros["AUX"].valor = this.transformar_a_decimal(direccion) 
+                let direccion_decimal = this.registros["AUX"].valor & BITS_MAX_DIR
                 //Asignacion
-                this.memoria[direccion_decimal] = this.registros["A"] ^ this.registros["B"]
+                this.memoria[direccion_decimal] = this.registros["A"].valor ^ this.registros["B"].valor
+                //flags
+                this.comprobar_flag_z(this.memoria[direccion_decimal])
             } else {
                 throw new Error("Operacion con argumentos invalidos")
             }
@@ -316,64 +378,78 @@ class Assembly {
     }
     not(destino, valor = null) {
         this.restaurar_flags()
-        let resultado = ~ this.registros["A"] & BITS_MAX //Limita que sea una representacion en 16
+        let resultado = (~this.registros["A"].valor) & BITS_MAX //Recorta los bits del resultado a 16
+
         this.comprobar_flag_z(resultado)
         if (destino == "A" && arguments.length == 1) {
-            this.registros["A"] = resultado
+            this.registros["A"].valor = resultado
         } else if (valor == "A") {
             if (destino == "B") {
-                this.registros["B"] = resultado
+                this.registros["B"].valor = resultado
             } else if (REGEX_DIR_B.test(destino)) {
                 let direccion = this.quitar_parentesis(destino)
                 if (direccion == "B") {
-                    this.memoria[this.registros["B"]] = resultado
+                    direccion = this.registros["B"].valor & BITS_MAX_DIR
                 } else {
-                    this.memoria[direccion] = resultado
+                    this.registros["AUX"].valor = this.transformar_a_decimal(direccion)
+                    direccion = this.registros["AUX"].valor & BITS_MAX_DIR 
                 }
+                this.memoria[direccion] = resultado
             }
         } else {
             throw new Error("Operacion con argumentos invalidos")
         }
+    
     }
     shr(destino, valor = null) {
+        //flags
         this.restaurar_flags()
-        this.comprobar_flag_c("SHR", this.registros["A"])
-        let resultado = (this.registros["A"] >>> 1) & BITS_MAX //Limita que sea una representacion en 16
+        this.comprobar_flag_c("SHR", this.registros["A"].valor)
+
+        let resultado = (this.registros["A"].valor >>> 1) & BITS_MAX //Recorta los bits del resultado a 16
+
         this.comprobar_flag_z(resultado)
         if (destino == "A" && arguments.length == 1) {
-            this.registros["A"] = resultado
+            this.registros["A"].valor = resultado
         } else if (valor == "A") {
             if (destino == "B") {
-                this.registros["B"] = resultado
+                this.registros["B"].valor = resultado
             } else if (REGEX_DIR_B.test(destino)) {
                 let direccion = this.quitar_parentesis(destino)
                 if (direccion == "B") {
-                    this.memoria[this.registros["B"]] = resultado
+                    direccion = this.registros["B"].valor & BITS_MAX_DIR
                 } else {
-                    this.memoria[direccion] = resultado
+                    this.registros["AUX"].valor = this.transformar_a_decimal(direccion)
+                    direccion = this.registros["AUX"].valor & BITS_MAX_DIR 
                 }
+                this.memoria[direccion] = resultado
             }
         } else {
             throw new Error("Operacion con argumentos invalidos")
         } 
     }
     shl(destino, valor = null) {
+        //flags
         this.restaurar_flags()
-        this.comprobar_flag_c("SHL", this.registros["A"])
-        let resultado = (this.registros["A"] << 1) & BITS_MAX //Limita que sea una representacion en 16
+        this.comprobar_flag_c("SHL", this.registros["A"].valor)
+
+        let resultado = (this.registros["A"].valor << 1) & BITS_MAX //Recorta los bits del resultado a 16
+
         this.comprobar_flag_z(resultado)
         if (destino == "A" && arguments.length == 1) {
-            this.registros["A"] = resultado
+            this.registros["A"].valor = resultado
         } else if (valor == "A") {
             if (destino == "B") {
-                this.registros["B"] = resultado
+                this.registros["B"].valor = resultado
             } else if (REGEX_DIR_B.test(destino)) {
                 let direccion = this.quitar_parentesis(destino)
                 if (direccion == "B") {
-                    this.memoria[this.registros["B"]] = resultado
+                    direccion = this.registros["B"].valor & BITS_MAX_DIR
                 } else {
-                    this.memoria[direccion] = resultado
+                    this.registros["AUX"].valor = this.transformar_a_decimal(direccion)
+                    direccion = this.registros["AUX"].valor & BITS_MAX_DIR 
                 }
+                this.memoria[direccion] = resultado
             }
         } else {
             throw new Error("Operacion con argumentos invalidos")
@@ -385,30 +461,39 @@ class Assembly {
             throw new Error("Operacion con argumentos invalidos")
         }
         if (["A", "B"].includes(valor)) { //A | B
-            //flag
-            let resultado = this.comprobar_flag_c("ADD", this.registros[valor] + 1)
-            //asignacion
-            this.registros[valor] = resultado
+            //Asignar valores
+            let resultado = this.registros[valor].valor + 1
+            this.registros[valor].valor ++
+
+            //flags
+            this.comprobar_flag_c("ADD", this.registros[valor].valor, resultado)
         } else if (REGEX_DIR_B.test(valor)) {  //(dir) | (B)
             let direccion = this.quitar_parentesis(valor)
             if (direccion === "B") {
-                if (this.registros["B"] in this.memoria) {
+                direccion = this.registros["B"].valor & BITS_MAX_DIR
+
+                if (direccion in this.memoria) {
+                    //Asiganar valores
+                    let resultado = this.memoria[direccion] + 1
+                    this.memoria[direccion] = resultado
+                
                     //flag
-                    let resultado = this.comprobar_flag_c("ADD", this.memoria[this.registros["B"]] + 1)
-                    //asignacion
-                    this.memoria[this.registros["B"]] = resultado
+                    this.comprobar_flag_c("ADD", this.memoria[direccion], resultado)
                 } else {
-                    this.memoria[this.registros["B"]] = 1
+                    this.memoria[direccion] = 1
                 }  
             } else {
-                let direccion_decimal = this.transformar_a_decimal(direccion)
-                if (direccion_decimal in this.memoria) {
+                this.registros["AUX"].valor = this.transformar_a_decimal(direccion)
+                direccion = this.registros["AUX"].valor & BITS_MAX_DIR
+                if (direccion in this.memoria) {
+                    //Asiganar valores
+                    let resultado = this.memoria[direccion] + 1
+                    this.memoria[direccion] = resultado
+                
                     //flag
-                    let resultado = this.comprobar_flag_c("ADD", this.memoria[direccion_decimal] + 1)
-                    //asignacion
-                    this.memoria[direccion_decimal] = resultado
+                    this.comprobar_flag_c("ADD", this.memoria[direccion], resultado)
                 } else {
-                    this.memoria[direccion_decimal] = 1
+                    this.memoria[direccion] = 1
                 }  
             } 
         } else {
@@ -422,9 +507,10 @@ class Assembly {
         }
         if ((valor == "A")) {
             //flag
-            this.comprobar_flag_c("SUB", this.registros["A"], 1)
-            let resultado = this.comprobar_flag_n(this.registros["A"] - 1)
-            this.registros["A"] = resultado
+            this.comprobar_flag_c("SUB", this.registros["A"].valor, 1)
+            this.comprobar_flag_n(this.registros["A"].valor - 1)
+
+            this.registros["A"].valor = this.registros["A"].valor - 1
         } else {
             throw new Error("Operacion con argumentos invalidos")
         }
@@ -433,8 +519,8 @@ class Assembly {
         this.restaurar_flags()
         if (valor_1 == "A") {
             let literal = this.forzar_literal(valor_2)
-            let resultado = this.registros["A"] - literal
-            this.comprobar_flag_c("SUB", this.registros["A"], literal)
+            let resultado = this.registros["A"].valor - literal
+            this.comprobar_flag_c("SUB", this.registros["A"].valor, literal)
             this.comprobar_flag_n(resultado)
             this.comprobar_flag_z(resultado)
         } else {
@@ -445,7 +531,7 @@ class Assembly {
         if (arguments.length != 1) {
             throw new Error("Operacion con argumentos invalidos")
         }
-        this.registros["PC"] = direccion
+        this.registros["PC"].valor = direccion
         this.restaurar_flags()
     }
     jeq(direccion) {
@@ -453,7 +539,9 @@ class Assembly {
             throw new Error("Operacion con argumentos invalidos")
         }
         if (this.flags["Z"] == 1) {
-            this.registros["PC"] = direccion
+            this.registros["PC"].valor = direccion
+        } else {
+            this.registros["PC"].valor ++
         }
         this.restaurar_flags()
     }
@@ -462,7 +550,9 @@ class Assembly {
             throw new Error("Operacion con argumentos invalidos")
         }
         if (this.flags["Z"] == 0) {
-            this.registros["PC"] = direccion
+            this.registros["PC"].valor = direccion
+        } else {
+            this.registros["PC"].valor ++
         }
         this.restaurar_flags()
     }
@@ -471,7 +561,9 @@ class Assembly {
             throw new Error("Operacion con argumentos invalidos")
         }
         if (this.flags["N"] == 0 && this.flags["Z"] == 0) {
-            this.registros["PC"] = direccion
+            this.registros["PC"].valor = direccion
+        } else {
+            this.registros["PC"].valor ++
         }
         this.restaurar_flags()
     }
@@ -480,7 +572,9 @@ class Assembly {
             throw new Error("Operacion con argumentos invalidos")
         }
         if (this.flags["N"] == 0) {
-            this.registros["PC"] = direccion
+            this.registros["PC"].valor = direccion
+        } else {
+            this.registros["PC"].valor ++
         }
         this.restaurar_flags()
     }
@@ -489,7 +583,9 @@ class Assembly {
             throw new Error("Operacion con argumentos invalidos")
         }
         if (this.flags["N"] == 1) {
-            this.registros["PC"] = direccion
+            this.registros["PC"].valor = direccion
+        } else {
+            this.registros["PC"].valor ++
         }
         this.restaurar_flags()
     }
@@ -498,7 +594,9 @@ class Assembly {
             throw new Error("Operacion con argumentos invalidos")
         }
         if (this.flags["N"] == 1 || this.flags["Z"] == 1) {
-            this.registros["PC"] = direccion
+            this.registros["PC"].valor = direccion
+        } else {
+            this.registros["PC"].valor ++
         }
         this.restaurar_flags()
     }
@@ -507,39 +605,41 @@ class Assembly {
             throw new Error("Operacion con argumentos invalidos")
         }
         if (this.flags["C"] == 1) {
-            this.registros["PC"] = direccion
+            this.registros["PC"].valor = direccion
+        } else {
+            this.registros["PC"].valor ++
         }
         this.restaurar_flags()
     }
-    push(valor) {
+    push(arg) {
         this.restaurar_flags()
-        if (arguments.length != 1 || !(["A", "B"].includes(valor))) {
+        if (arguments.length != 1 || !(["A", "B"].includes(arg))) {
             throw new Error("Operacion con argumentos invalidos")
         }
-        this.memoria[this.registros["SP"]] = this.registros[valor]
-        this.registros["SP"] --
+        this.memoria[this.registros["SP"].valor] = this.registros[arg].valor
+        this.registros["SP"].valor --
     }
     pop(destino) {
         this.restaurar_flags()
         if (arguments.length != 1 || !(["A", "B"].includes(destino))) {
             throw new Error("Operacion con argumentos invalidos")
         }
-        this.registros["SP"] = this.comprobar_flag_c("NOP", this.registros["SP"] + 1)
-        this.registros[destino] = this.memoria[this.registros["SP"]] 
+        this.registros["SP"].valor ++
+        this.registros[destino].valor = this.memoria[this.registros["SP"].valor] 
     }
     call(direccion) {
         this.restaurar_flags()
         if (arguments.length != 1) {
             throw new Error("Operacion con argumentos invalidos")
         }
-        this.memoria[this.registros["SP"]] = this.registros["PC"] + 1
-        this.registros["PC"] = direccion
-        this.registros["SP"] --
+        this.memoria[this.registros["SP"].valor] = this.registros["PC"].valor + 1
+        this.registros["PC"].valor = direccion
+        this.registros["SP"].valor --
     }
     ret() {
         this.restaurar_flags()
-        this.registros["SP"] = this.comprobar_flag_c("NOP", this.registros["SP"] + 1)
-        this.registros["PC"] = this.memoria[this.registros["SP"]] - 1
+        this.registros["SP"].valor ++
+        this.registros["PC"].valor = this.memoria[this.registros["SP"].valor]
     }
     nop() {}
 
@@ -561,7 +661,8 @@ class Assembly {
                 }
                 numero_decimal = parseInt(numero)
             }
-            return this.comprobar_flag_c("NOP", numero_decimal)
+            this.registros["AUX"].valor = numero_decimal
+            return this.registros["AUX"].valor
         }
     }
     traducir_valor(valor) {
@@ -610,11 +711,15 @@ class Assembly {
         a reducir los if's en las operaciones
         */
         if (["A", "B"].includes(valor_traducido)) { //Registros
-            return this.registros["B"] //Hace sentido ya que siempre se opera con A
+            return this.registros["B"].valor //Hace sentido ya que siempre se opera con A
         } else if (REGEX_DIR_B.test(valor_traducido)) { //Memoria
             let direccion = this.quitar_parentesis(valor_traducido)
+            
             if (direccion == "B") {
-                direccion = this.registros["B"]
+                direccion = this.registros["B"].valor & BITS_MAX_DIR
+            } else {
+                this.registros["AUX"].valor = this.transformar_a_decimal(direccion)
+                direccion = this.registros["AUX"].valor & BITS_MAX_DIR
             }
             if (direccion in this.memoria) {
                 return this.memoria[direccion]
@@ -627,13 +732,14 @@ class Assembly {
     }
     traducir_direccion(direccion) {
         if (direccion in this.direcciones_codigo) {
-            return this.direcciones_codigo[direccion] - 1
+            return this.direcciones_codigo[direccion] & BITS_MAX_DIR
         } 
-        let direccion_decimal = this.transformar_a_decimal(direccion)
-        if (isNaN(direccion_decimal)){ 
+        this.registros["AUX"].valor = this.transformar_a_decimal(direccion)
+        if (isNaN(this.registros["AUX"].valor)){ 
             throw new Error("Direccion de codigo invalida")
         } else { 
-            return direccion_decimal - 1
+            direccion = this.registros["AUX"].valor & BITS_MAX_DIR
+            return direccion
         }
     }
     comprobar_flag_c(operacion, dato_1, dato_2){
@@ -643,8 +749,7 @@ class Assembly {
             }
         // Caso | result < a + b
         } else if (operacion == "ADD") {
-            if (dato_1 > BITS_MAX) {
-                dato_1 = dato_1 % BITS_MAX - 1
+            if (dato_1 < dato_2) {
                 this.flags["C"] = 1
             }else {
                 this.flags["C"] = 0
@@ -665,20 +770,13 @@ class Assembly {
             let binario = "0".repeat(BITS) + dato_1.toString(2) //Le extiendo bits por si la representacion es menor a 16 bits
             this.flags["C"] = parseInt(binario[binario.length - BITS])
         }
-        return(dato_1)
     }
     comprobar_flag_n(resultado) {
-        // Sin soporte de negativos 
         if (resultado < 0) {
-            while (resultado < 0) {
-              resultado += BITS_MAX;
-            }
-            resultado += 1
             this.flags['N'] = 1;
           } else {
             this.flags['N'] = 0;
           }
-        return resultado
     }
     comprobar_flag_z(resultado) {
         if (resultado == 0) {
@@ -701,7 +799,10 @@ class Assembly {
 
     toJSON() {
         return {
-          registros: this.registros,
+          registros: {A: this.registros["A"], 
+            B: this.registros["B"], 
+            PC: this.registros["PC"], 
+            SP: this.registros["SP"]},
           memoria: this.memoria,
           flags: this.flags
         }

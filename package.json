@@ -10,7 +10,8 @@
   "version": "1.0.0",
   "main": "servidor.js",
   "scripts": {
-    "dev": "nodemon ./src/servidor.js"
+    "dev": "nodemon ./src/servidor.js",
+    "start": "NODE_ENV=production node ./src/servidor.js"
   },
   "keywords": [],
   "author": "",
