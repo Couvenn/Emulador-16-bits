@@ -10,6 +10,8 @@ const b_next = document.getElementById("next")
 
 const texto_codigo = document.getElementById("codigo")
 
+const URL_API = "https://emulador-16-bits.onrender.com/"
+
 let ciclos = 0
 
 function formatear_datos () {
@@ -56,7 +58,7 @@ function actualizar_datos (datos) {
 }
 
 b_ejecutar.addEventListener("click", () => {
-    fetch("http://localhost:3000/assembly", {
+    fetch(URL_API + "/assembly", {
         method: "POST",
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({codigo: texto_codigo.value})
@@ -72,7 +74,7 @@ b_prev.addEventListener("click", () => {
     if (ciclos > 0) {
         ciclos --
     }
-    fetch("http://localhost:3000/prev", {
+    fetch(URL_API + "/prev", {
         method: "POST",
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({codigo: texto_codigo.value, ciclos: ciclos})
@@ -84,7 +86,7 @@ b_prev.addEventListener("click", () => {
 b_next.addEventListener("click", () => {
     ciclos ++
 
-    fetch("http://localhost:3000/next", {
+    fetch(URL_API + "/next", {
         method: "POST",
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({codigo: texto_codigo.value, ciclos: ciclos})

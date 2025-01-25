@@ -32,5 +32,6 @@ module.exports = {
     LISTA_SALTOS,
     PORT,
     APP_NAME,
-    PUBLIC_RUTA
+    PUBLIC_RUTA,
+    URL_API
   };
