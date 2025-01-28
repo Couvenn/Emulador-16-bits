@@ -119,4 +119,5 @@ texto_codigo.addEventListener('input', () => {
         b_prev.disabled = true
         b_next.disabled = true
     }
+    b_prev.disabled = true
 })
